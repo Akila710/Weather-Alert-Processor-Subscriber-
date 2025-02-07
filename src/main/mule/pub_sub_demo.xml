@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<flow name="pub_flow_temperature" doc:id="a0d1b31c-f209-42f1-8fed-3d8839b666f2" >
+		<scheduler doc:name="Scheduler" doc:id="ba4ca5b6-2b1d-4802-b4bb-0d3c4d200756" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="30" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<foreach doc:name="For Each" doc:id="9bcca4d3-d0c1-4348-aeb7-5cb27b9716fa" collection="#[(p('weather.cities') default '') splitBy ',']">
+			<set-variable doc:name="Set Variable" doc:id="0ee451b3-55b6-430a-a190-dd685c71b49e" variableName="city" value="#[payload]"/>
+			<set-variable value="#[p('weather.cities') splitBy ',' indexOf(payload)]" doc:name="Set Variable" doc:id="1294942f-f905-4b1d-a106-e3ebb0fff012" variableName="cityIndex" />
+			<set-variable value="#[payload]" doc:name="Set Variable" doc:id="4dd85f34-16f2-48e7-9c43-45a3fd1d6087" variableName="cityName"/>
+			<set-variable value="#[(p('weather.latitudes') splitBy ',')[vars.cityIndex] as Number]" doc:name="Set Variable" doc:id="f5fedcd9-1c3a-46a3-8ee9-9ef892700f30" variableName="latitude"/>
+			<set-variable value="#[(p('weather.longitudes') splitBy ',')[vars.cityIndex] as Number]" doc:name="Set Variable" doc:id="8e011da4-6285-48b2-bd14-9e9522d088be" variableName="longitude"/>
+			<http:request method="GET" doc:name="Request" doc:id="58a93466-3817-414e-a888-9f6342d70462" config-ref="HTTP_Request_configuration" url="#[p('openMeteoApi.baseUrl') ++ '?latitude=' ++ vars.latitude ++ '&amp;longitude=' ++ vars.longitude ++ '&amp;hourly=temperature_2m']"/>
+			<logger level="INFO" doc:name="Logger" doc:id="b97147b0-2376-4aaf-aed4-58db82e261bf" message="Successfully Fetched Events" category="com.demo.pub_sub_demo.pub_flow_temperature.#1"/>
+			<ee:transform doc:name="Transform Message" doc:id="ada3574b-5fc8-45c4-b29b-ff7dc53e851e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var temperatures = payload.hourly.temperature_2m
+var times = payload.hourly.time
+//var p = payload.hourly.precipitation_probability
+---
+{
+    city: vars.cityName,
+    data: (temperatures zip times)
+        filter ((tempTime) -> tempTime[0] as Number < 5)
+        map ((tempTime) -> {
+            temperature: tempTime[0] default 999,
+            time: tempTime[1] default "",
+            
+        })
+}
+
+ ]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			<jms:publish doc:name="Publish" doc:id="f809deb3-f3df-489d-b000-e790f0991dec" config-ref="JMS_Config" destination="#[(p('Queues.temperatureQueue'))]">
+		</jms:publish>
+			<logger level="INFO" doc:name="Logger" doc:id="cd3006eb-8bcd-47e1-8105-a340b106d05e" message="messsage published #[payload]" category="com.demo.pub_sub_demo.pub_flow_temperature.#2"/>
+		</foreach>
+		<error-handler ref="commonsError_Handler" />
+	</flow>
+	
+	<flow name="Sub_flow_temperature" doc:id="039e6294-3a86-4b57-8228-ed4e78f33261" >
+		<jms:listener doc:name="On New Message" doc:id="6f4e5c78-fbee-4577-916c-61b2b74109f7" config-ref="JMS_Config" destination="weather.temperature.alerts">
+			<jms:consumer-type >
+				<jms:queue-consumer />
+			</jms:consumer-type>
+		</jms:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="c5ac607c-22a3-4c7c-ad0e-3a6b823e9b09" message="Messages Consumed" category="com.demo.pub_sub_demo.Sub_flow_temperature.#1"/>
+		<ee:transform doc:name="Transform Message" doc:id="b508ffa8-eb44-41ea-901a-6280044694c9">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var data = payload.data
+---
+data map ((item) -> {
+    city: payload.city,
+    temperature: item.temperature,
+    created_at:item.time,
+})
+	
+
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="e1a7f3b4-38de-48c8-9f37-76ffbf6f90c9" message="#[payload]" category="com.demo.pub_sub_demo.Sub_flow_temperature.#2"/>
+		<foreach doc:name="For Each" doc:id="307bf240-0911-4554-ab2b-a28821e5ea91" collection="#[payload]">
+			<db:insert doc:name="Insert" doc:id="7d20a731-3e99-43cb-918a-58eaf25400eb" config-ref="Database_Config">
+			<db:sql><![CDATA[insert into WEATHER_ALERTS (id ,city , alert_type, temperature, message, created_at)
+VALUES (UUID(), :cityName ,'Temperature Alert', :temp, :msg, CURRENT_TIMESTAMP);]]></db:sql>
+				<db:input-parameters ><![CDATA[#[%dw 2.0
+var temp = payload.temperature as Number
+var alertMessage = if (temp < 3) 
+                     "There is a chance of snowstorm"
+                   else if (temp >= 3 and temp < 5) 
+                     "There is a chance of heavy rain today"
+                   else 
+                     "It's hot weather"
+---
+
+{
+	cityName: payload.city,
+	temp: payload.temperature as String {format: "0.00"},
+	msg: alertMessage
+}]]]></db:input-parameters>
+		</db:insert>
+		</foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="5bb392df-7c66-47f3-a997-846760199b37" message="Data inserted" category="com.demo.pub_sub_demo.Sub_flow_temperature.#3"/>
+		<error-handler ref="commonsError_Handler" />
+	</flow>
+</mule>

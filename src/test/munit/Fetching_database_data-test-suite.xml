@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+		http://www.mulesoft.org/schema/mule/munit-tools  http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+	<munit:config name="Fetching_database_data-test-suite.xml" />
+	<munit:test name="Fetching_database_data-test-suite-city_flowTest" doc:id="01bcacf7-5c84-4dbf-b4b4-3b8fc426db10" description="Test" expectedErrorType="CUSTOM:NOT_FOUND">
+		<munit:execution >
+			<munit:set-event doc:name="Set Event" doc:id="4135ab29-238f-4d81-8740-20dd221f6d59" >
+				<munit:attributes value='#[{uriParams : { city : "pune"}}]' />
+			</munit:set-event>
+			<flow-ref doc:name="Flow-ref to city_flow" doc:id="59a41b45-e3bd-472c-a98f-5261fcfd5bc3" name="city_flow"/>
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert that" doc:id="3f9ae8aa-ddb4-4f66-b23f-64425b52239c" expression="#[payload]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+	<munit:test name="Fetching_database_data-test-suiteTest" doc:id="b981475e-4121-48b7-b799-605ca4945631" >
+		<munit:execution >
+			<munit:set-event doc:name="Set Event" doc:id="76838de4-4213-4588-ba57-15b916498254" >
+				<munit:attributes value='#[{uriParams : { city : "London"}}]' />
+			</munit:set-event>
+			<flow-ref doc:name="Flow-ref to city_flow" doc:id="96e9e1cb-dfd7-47aa-82b2-742c2871ab2a" name="city_flow" />
+		</munit:execution>
+		<munit:validation >
+			<munit-tools:assert-that doc:name="Assert that" doc:id="0a9595f1-6cb5-4448-8265-3d3e3a830aa6" expression="#[payload]" is="#[MunitTools::notNullValue()]" />
+		</munit:validation>
+	</munit:test>
+
+
+</mule>

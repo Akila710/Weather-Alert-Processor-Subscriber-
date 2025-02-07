@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<flow name="pub_precipitation_alertflow" doc:id="2cdffa75-93cc-4c58-8c26-ed459bead564" >
+		<scheduler doc:name="Scheduler" doc:id="659c376e-88ad-4703-b952-bd31aabb56fd" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="30" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<foreach doc:name="For Each" doc:id="1d6cdbae-377d-40ed-bca5-536619c5163f" collection="#[(p('weather.cities') default '') splitBy ',']">
+			<set-variable value="#[p('weather.cities') splitBy ',' indexOf(payload)]" doc:name="Set Variable" doc:id="19a6c920-a8cf-45e5-86d7-e780894a2620" variableName="cityIndex"/>
+			<set-variable value="#[payload]" doc:name="Set Variable" doc:id="57f747fc-3af5-4c3d-b9f5-9cd84167415f" variableName="cityName"/>
+			<set-variable value="#[(p('weather.latitudes') splitBy ',')[vars.cityIndex] as Number]" doc:name="Set Variable" doc:id="2b15d297-c709-444d-9820-c00f9c1c5cd7" variableName="latitude"/>
+			<set-variable value="#[(p('weather.longitudes') splitBy ',')[vars.cityIndex] as Number]" doc:name="Set Variable" doc:id="5000a08b-4897-44b8-a9e0-cc624c5099ab" variableName="longitude"/>
+			<set-variable value="#[p('alerts.precipitationThreshold') as Number]" doc:name="Set Variable" doc:id="4ef31eb0-4a05-4382-a749-f95595a742b7" variableName="precipitationThreshold"/>
+			<http:request method="GET" doc:name="Request" doc:id="3fe065ea-e7da-4385-964c-271ee81552a4" config-ref="HTTP_Request_configuration" url="#[p('openMeteoApi.baseUrl') ++ '?latitude=' ++ vars.latitude ++ '&amp;longitude=' ++ vars.longitude ++ '&amp;hourly=precipitation_probability']"/>
+			<logger level="INFO" doc:name="Logger" doc:id="510e2f5d-5e88-45ac-b0d8-24cd7886c878" message="Successfully Fetched Events" category="com.demo.pub_sub_demo.pub_precipitation_alertflow.#1"/>
+			<ee:transform doc:name="Extract weather datat for precipitation" doc:id="78948d6f-2c35-48cb-b77d-e926888ecd43" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var precipProbabilities = payload.hourly.precipitation_probability
+var times = payload.hourly.time
+---
+{
+    city: vars.cityName,
+    message: "It is very likely to rain!",
+    data: (precipProbabilities zip times)
+        filter ((precipTime) -> precipTime[0] as Number > vars.precipitationThreshold)
+        map ((precipTime) -> {
+            precipitation_probability: precipTime[0] default 0.0,
+            time: precipTime[1] default ""
+        })
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<jms:publish doc:name="Publish" doc:id="cb7c45a8-643d-46ae-9f2c-65f5bb53ee3f" config-ref="JMS_Config" destination="#[(p('Queues.PrecipitationQueue'))]"/>
+			<logger level="INFO" doc:name="Logger" doc:id="dd7a1256-5904-4f9b-8578-47e9f334a4ba" message="message published to the Queue " category="com.demo.pub_sub_demo.pub_precipitation_alertflow.#2"/>
+		
+</foreach>
+		<error-handler ref="commonsError_Handler" />
+	
+</flow>
+	<flow name="sub_precipitation_alertFlow" doc:id="5a8cadd1-6f75-4aa4-a6d3-aca98ac9eae7" >
+		<jms:listener doc:name="On New Message" doc:id="d44fcb20-be1d-4438-bffc-3cb9f91c1bef" config-ref="JMS_Config" destination="weather.alerts.precipitation">
+			<jms:consumer-type >
+				<jms:queue-consumer />
+			</jms:consumer-type>
+		</jms:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="60fa1f0a-13d8-4ba6-b8c7-9514c46f2608" message="Messages Consumed" category="com.demo.pub_sub_demo.sub_precipitation_alertFlow.#1"/>
+		<ee:transform doc:name="Transform Message" doc:id="4dd7bc15-8173-4466-8b00-b46ba2ae4eae" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var data = payload.data
+---
+data map ((item) -> {
+    city: payload.city,
+    precipitation_probability: item.precipitation_probability, 
+    created_at:item.time,
+})]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="eacb83d6-e643-4005-9599-72f98fa9f5af" message="#[payload]" category="com.demo.pub_sub_demo.sub_precipitation_alertFlow.#2"/>
+		<foreach doc:name="For Each" doc:id="d3f0b19a-d23a-4587-8644-65d7567273aa" collection="#[payload]">
+			<db:insert doc:name="Insert" doc:id="7f16f1d1-39b8-4d6e-a767-c416cddf4496" config-ref="Database_Config">
+				<db:sql ><![CDATA[INSERT INTO weather_updates (id, city, precipitation, recorded_at) VALUES
+(UUID(), :cityName, :precipitation_value, CURRENT_TIMESTAMP)]]></db:sql>
+				<db:input-parameters ><![CDATA[#[{
+	cityName: payload.city,
+	precipitation_value: payload.precipitation_probability,
+	record: payload.time
+}]]]></db:input-parameters>
+			</db:insert>
+		</foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="ac300920-75bb-45dd-a312-f70ac0bf3be2" message="Data inserted" category="com.demo.pub_sub_demo.sub_precipitation_alertFlow.#3"/>
+		<error-handler ref="commonsError_Handler" />
+	</flow>
+</mule>

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<configuration-properties doc:name="Configuration properties" doc:id="0c1e9445-a686-485f-973b-85fbf133b583" file="config.yaml" />
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="daa40ef6-0382-4079-b62b-5a72de13c10f" basePath="https://api.open-meteo.com/v1/forecast" >
+		<http:request-connection host="localhost" port="443"/>
+	</http:request-config>
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="6517890c-7390-4413-855f-da3d069f744d" >
+		<jms:active-mq-connection username="admin" password="admin" >
+			<jms:factory-configuration brokerUrl="tcp://localhost:61616" />
+		</jms:active-mq-connection>
+	</jms:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="c223193b-e05f-41f4-918f-5bffccc6b4c2" >
+		<db:generic-connection url="jdbc:h2:tcp://localhost/~/test" driverClassName="org.h2.Driver" user="sa" />
+	</db:config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="0fd6d9bd-368c-4b96-85e7-03593d3722de" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<configuration doc:name="Configuration" doc:id="a7abcb11-fd1c-4814-b40a-f8b2852a4132" defaultErrorHandler-ref="commonsError_Handler" />
+	<error-handler name="commonsError_Handler" doc:id="4574eb60-0726-4813-bf0d-fa1c7699d2b7" >
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="688a3f9a-ee7b-4ee5-9480-fdbaf17251c2" type="DB:CONNECTIVITY">
+			<ee:transform doc:name="Transform Message" doc:id="3595387a-3842-41e3-b899-9308b0ad0f92" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"Message" : "Database Connection Failed"
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="40285db5-a4ab-4927-9d04-4c6f2811e919" message="#[payload]" category="com.demo.pub_sub_demo.commonsError_Handler.#1"/>
+		</on-error-propagate>
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="44569ced-f028-4041-9fea-18dcad5218b2" type="JMS:DESTINATION_NOT_FOUND">
+			<ee:transform doc:name="Transform Message" doc:id="25bbd694-58fc-4961-95dd-e65e0bc0ca59" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"Message" : "Destination doesn't exist"
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="9b89622e-8921-402b-be47-ca9e74fccd55" message="#[payload]" category="com.demo.pub_sub_demo.commonsError_Handler.#2"/>
+		</on-error-propagate>
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="bf3ef86d-5d76-4967-bb3d-12c429ad3018" type="CUSTOM:NOT_FOUND">
+			<ee:transform doc:name="Transform Message" doc:id="1309125d-595f-40ff-a476-8c5494493526" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message": "City not found , Please try again"
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="d2e6074f-007e-4935-ad06-fd9bd9799367" message="#[payload]" category="com.demo.pub_sub_demo.commonsError_Handler.#3"/>
+		</on-error-propagate>
+	</error-handler>
+
+	</mule>

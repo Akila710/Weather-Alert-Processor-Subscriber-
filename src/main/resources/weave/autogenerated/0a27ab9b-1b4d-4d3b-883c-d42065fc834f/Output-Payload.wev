@@ -1,0 +1,4 @@
+%dw 2.0
+
+type auto_0a27ab9b_1b4d_4d3b_883c_d42065fc834f_Output_Payload = Array<{  city: String,   temperature: Number,   created_at: String,   id: String,   message: String,   alert_type: String,   _?: Any}>
+

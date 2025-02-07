@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<flow name="Active_flow" doc:id="cee1ed02-a89e-47e8-aa82-cfa8df9b6dd0" >
+		<db:select doc:name="Select" doc:id="9c715c49-e830-47bc-ac5d-5fc26498487b" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM WEATHER_ALERTS
+WHERE created_at > NOW() - INTERVAL 24 HOUR;]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="21970426-7d13-4ce4-91b4-856a9a3d8afd" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+   Message: "Active Weather Alert",
+   Data : payload
+
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="cab104ef-8eb0-484b-a3f2-6291889b1bb3" message="Active Data retrived" category="com.demo.pub_sub_demo.Active_flow.#1"/>
+	</flow>
+	<flow name="Alert_history_flow" doc:id="833dc38f-2490-4840-925c-0be1c346365a" >
+		<db:select doc:name="Select" doc:id="b3256bd7-b990-45a4-ac75-f271a308180b" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM weather_alerts;]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="f67f1ffc-6e32-4aaf-b13a-8d3efa9c5ed7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="4c3c1bc1-7145-4660-8ae2-cb08fbc2b387" message="Alert History Data Retrived" category="com.demo.pub_sub_demo.Alert_history_flow.#2"/>
+		
+	</flow>
+	<flow name="city_flow" doc:id="0a27ab9b-1b4d-4d3b-883c-d42065fc834f">
+		<db:select doc:name="Select" doc:id="e942abdb-7143-4979-8499-3247cbbd0e87" config-ref="Database_Config">
+			<db:sql><![CDATA[SELECT * FROM WEATHER_ALERTS
+WHERE city = :city;]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	city: attributes.uriParams.city as String 
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="1be4a2f1-0c16-45b1-b5a5-016eecb828b9" >
+			<when expression="#[sizeOf(payload) == 0]">
+				<raise-error doc:name="Raise error" doc:id="f3b3f26f-7b45-40e4-bd54-5cdfde4f7c3c" type="CUSTOM:NOT_FOUND"/>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="Transform Message" doc:id="984b0480-9797-4188-a376-496883b3d3b8">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"city": payload
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="319c5281-11d1-46e7-bcfe-2834b91f75eb" message="#[payload]" category="com.demo.pub_sub_demo.city_flow.#3"/>
+			</otherwise>
+		</choice>
+		<error-handler ref="commonsError_Handler" />
+	</flow>
+</mule>
